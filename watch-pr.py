@@ -64,12 +64,7 @@ ORGANIZATION = _CFG["organization"]
 PROJECT = _CFG["project"]
 REPOSITORY_ID = _CFG["repository_id"]
 
-PAT = os.environ.get("ADO_PAT")
-if not PAT:
-    print(f"{Fore.RED}Помилка: змінна середовища ADO_PAT не знайдена!{Style.RESET_ALL}", file=sys.stderr)
-    print("Встановіть її перед запуском: $env:ADO_PAT=\"ваш_токен\"", file=sys.stderr)
-    sys.exit(1)
-
+PAT = os.environ.get("ADO_PAT", "")
 AUTH = HTTPBasicAuth("", PAT)
 HEADERS = {"Content-Type": "application/json"}
 
@@ -412,6 +407,10 @@ def compare_snapshots(
 # ================= ГОЛОВНИЙ ЦИКЛ =================
 def run_monitor(interval: int, once: bool, notify: bool, sound: bool, include_drafts: bool = False) -> None:
     """Головний цикл відстеження PR."""
+    if not PAT:
+        print(f"{Fore.RED}Помилка: змінна середовища ADO_PAT не знайдена!{Style.RESET_ALL}", file=sys.stderr)
+        print("Встановіть її перед запуском: $env:ADO_PAT=\"ваш_токен\"", file=sys.stderr)
+        sys.exit(1)
     print(f"{Fore.CYAN}{Style.BRIGHT}=== Azure DevOps PR Watcher ==={Style.RESET_ALL}")
     print(f"Репозиторій: {ORGANIZATION}/{PROJECT}/{REPOSITORY_ID}")
     draft_status = "включено" if include_drafts else "ігноруються"
