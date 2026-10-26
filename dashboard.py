@@ -22,7 +22,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from nicegui import app, run, ui
+# Якщо запущено через pythonw.exe (без консолі), перенаправляємо stdout/stderr у лог-файл,
+# щоб uvicorn та підпроцеси не падали через sys.stdout == None
+if sys.stdout is None or sys.stderr is None:
+    _log_dir = Path(__file__).resolve().parent / "data"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _log_file = open(_log_dir / "dashboard.log", "a", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = _log_file
+    if sys.stderr is None:
+        sys.stderr = _log_file
+
+from nicegui import app, native, run, ui
 
 from config import (
     BASE_DIR,
@@ -1332,12 +1343,12 @@ def render_links_and_settings_page():
                     )
 
 
-if __name__ in {"__main__", "__mp_main__"}:
+if __name__ == "__main__":
     use_native = "--browser" not in sys.argv
     ui.run(
         title="Antigravity Automation Hub",
         host="127.0.0.1",
-        port=8420,
+        port=native.find_open_port(8420, 8499),
         dark=True,
         native=use_native,
         window_size=(1440, 900) if use_native else None,
