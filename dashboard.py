@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -228,6 +229,12 @@ def open_in_vscode(path_str: str) -> None:
             ui.notify(f"Відкриваю у {cmd}: {p.name}", type="positive")
             return
     os.startfile(str(p))
+
+
+def open_external_url(url: str) -> None:
+    """Відкриває зовнішнє посилання у системному браузері за замовчуванням."""
+    if url:
+        webbrowser.open(url)
 
 
 # ================= ГЛОБАЛЬНИЙ СТАН UI =================
@@ -723,7 +730,7 @@ def render_sprint_page(jump_to_setup_cb):
                                     if t["url"]:
                                         ui.button(
                                             icon="open_in_new",
-                                            on_click=lambda _, u=t["url"]: ui.navigate.to(u, new_tab=True),
+                                            on_click=lambda _, u=t["url"]: open_external_url(u),
                                         ).props("flat round dense size=sm color=grey-5").tooltip("Відкрити в ADO")
 
                 # Права колонка: прев'ю Markdown-файлу обраної таски
@@ -744,7 +751,7 @@ def render_sprint_page(jump_to_setup_cb):
                                     ui.button(
                                         "ADO",
                                         icon="open_in_new",
-                                        on_click=lambda: ui.navigate.to(selected_task["url"], new_tab=True),
+                                        on_click=lambda: open_external_url(selected_task["url"]),
                                     ).props("outline dense color=grey-5 no-caps size=sm")
 
                         ui.markdown(selected_task["content"]).classes(
@@ -1118,7 +1125,7 @@ def render_pr_monitor_page():
                                 ui.button(
                                     "Відкрити в ADO",
                                     icon="open_in_new",
-                                    on_click=lambda _, u=snap["url"]: ui.navigate.to(u, new_tab=True),
+                                    on_click=lambda _, u=snap["url"]: open_external_url(u),
                                 ).props("outline dense size=sm color=blue-4 no-caps")
 
                             # Секція Gated Builds
@@ -1257,7 +1264,7 @@ def render_links_and_settings_page():
                             ui.button(
                                 "Відкрити",
                                 icon="open_in_new",
-                                on_click=lambda _, u=item.get("url", ""): ui.navigate.to(u, new_tab=True),
+                                on_click=lambda _, u=item.get("url", ""): open_external_url(u),
                             ).props("outline dense color=blue-4 no-caps").classes("w-full mt-3")
 
             links_view()
@@ -1326,11 +1333,13 @@ def render_links_and_settings_page():
 
 
 if __name__ in {"__main__", "__mp_main__"}:
+    use_native = "--browser" not in sys.argv
     ui.run(
         title="Antigravity Automation Hub",
         host="127.0.0.1",
         port=8420,
         dark=True,
+        native=use_native,
+        window_size=(1440, 900) if use_native else None,
         reload=False,
-        show=True,
     )
