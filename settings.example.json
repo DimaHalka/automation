@@ -1,0 +1,18 @@
+{
+  "organization": "your-org",
+  "project": "YourProject",
+  "repository_id": "YourRepo",
+  "target_branch": "master",
+  "query_id": "00000000-0000-0000-0000-000000000000",
+  "user_prefix": "username",
+  "branch_prefix": "feature",
+  "git_roots": [
+    "C:\\Git",
+    "D:\\Git"
+  ],
+  "clang_format_path": "clang-format.exe",
+  "pr_watch_interval": 60,
+  "pr_watch_notify": true,
+  "pr_watch_sound": true,
+  "pr_watch_include_drafts": false
+}
