@@ -442,7 +442,7 @@ def stop_running_proc():
 def index_page():
     ui.dark_mode().enable()
     ui.add_head_html(f"<style>{ANTIGRAVITY_CSS}</style>")
-    ui.page_title("Antigravity Automation Hub")
+    ui.page_title("Automation Hub")
 
     nav_buttons: Dict[str, ui.button] = {}
     pr_header_badge: Optional[ui.badge] = None
@@ -1343,20 +1343,24 @@ def render_links_and_settings_page():
 
 
 if __name__ == "__main__":
+    APP_TITLE = "Automation Hub"
+    ICON_PATH = BASE_DIR / "icon.ico"
     port = native.find_open_port(8420, 8499)
     use_native = "--browser" not in sys.argv
 
     if use_native:
         import uvicorn
         import webview
+        from nicegui.native import window_icon
 
         uvicorn.Server.install_signal_handlers = lambda self: None
         server_thread = threading.Thread(
             target=lambda: ui.run(
-                title="Antigravity Automation Hub",
+                title=APP_TITLE,
                 host="127.0.0.1",
                 port=port,
                 dark=True,
+                favicon=ICON_PATH if ICON_PATH.exists() else None,
                 show=False,
                 reload=False,
             ),
@@ -1364,21 +1368,33 @@ if __name__ == "__main__":
         )
         server_thread.start()
 
-        webview.create_window(
-            title="Antigravity Automation Hub",
+        window = webview.create_window(
+            title=APP_TITLE,
             url=f"http://127.0.0.1:{port}",
             width=1440,
             height=900,
             background_color="#0b0d12",
         )
-        webview.start()
+
+        if sys.platform == "win32" and ICON_PATH.exists() and window is not None:
+            def _apply_custom_icon() -> None:
+                try:
+                    hwnd = window.native.Handle.ToInt32()
+                    window_icon.apply_icon(hwnd, APP_TITLE, str(ICON_PATH))
+                except Exception:
+                    pass
+
+            window.events.shown += _apply_custom_icon
+
+        webview.start(icon=str(ICON_PATH) if ICON_PATH.exists() else None)
         os._exit(0)
     else:
         ui.run(
-            title="Antigravity Automation Hub",
+            title=APP_TITLE,
             host="127.0.0.1",
             port=port,
             dark=True,
+            favicon=ICON_PATH if ICON_PATH.exists() else None,
             show=True,
             reload=False,
         )
