@@ -63,21 +63,6 @@ def get_task_info_from_folder(folder: Path) -> dict:
     return info
 
 
-def get_dir_size_gb(folder: Path) -> float:
-    """Рахує розмір каталогу в GB."""
-    total_bytes = 0
-    try:
-        for root, _, files in os.walk(folder):
-            for f in files:
-                try:
-                    total_bytes += os.path.getsize(os.path.join(root, f))
-                except OSError:
-                    pass
-    except Exception:
-        pass
-    return total_bytes / (1024**3)
-
-
 def main():
     print("Сканування робочих директорій...\n")
     folders = []
@@ -97,18 +82,16 @@ def main():
     items = []
     for f in folders:
         info = get_task_info_from_folder(f)
-        size_gb = get_dir_size_gb(f)
-        items.append({"path": f, "info": info, "size_gb": size_gb})
+        items.append({"path": f, "info": info})
 
     # Виводимо нумерований список
-    print(f"{'#':<3} | {'Папка':<25} | {'Розмір':<9} | {'Статус':<12} | {'Задача':<70}")
-    print("-" * 110)
+    print(f"{'#':<3} | {'Папка':<25} | {'Статус':<12} | {'Задача':<70}")
+    print("-" * 100)
     for idx, item in enumerate(items, start=1):
         f_name = item["path"].name
         if len(f_name) > 23:
             f_name = f_name[:20] + "..."
 
-        size_str = f"{item['size_gb']:.1f} GB"
         state_str = item["info"]["state"]
         
         # Додаємо маркер для закритих
@@ -125,9 +108,9 @@ def main():
         if len(task_str) > 70:
             task_str = task_str[:67] + "..."
 
-        print(f"{idx:<3} | {f_name:<25} | {size_str:<9} | {state_str:<12} | {task_str:<70}")
+        print(f"{idx:<3} | {f_name:<25} | {state_str:<12} | {task_str:<70}")
 
-    print("-" * 110)
+    print("-" * 100)
     user_input = input("\nВведіть номер(и) папок для видалення (наприклад: 1 або 1, 3) [Enter для виходу]: ").strip()
     if not user_input:
         print("Скасовано.")
@@ -147,13 +130,12 @@ def main():
 
     # Підтвердження операції
     to_delete = [items[i] for i in sorted(set(indices))]
-    total_freed = sum(it["size_gb"] for it in to_delete)
 
     print("\nДо видалення вибрано:")
     for it in to_delete:
-        print(f"  • {it['path']} ({it['size_gb']:.1f} GB)")
+        print(f"  • {it['path']}")
 
-    confirm = input(f"\nЗвільниться близько {total_freed:.1f} GB. Підтверджуєте видалення? [y/N]: ").strip().lower()
+    confirm = input(f"\nВидалити вибрані папки ({len(to_delete)} шт.)? [y/N]: ").strip().lower()
     if confirm in ("y", "yes"):
         for it in to_delete:
             target = it["path"]

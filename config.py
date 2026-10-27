@@ -23,7 +23,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     ],
     "clang_format_path": "clang-format.exe",
     "pr_watch_interval": 60,
-    "pr_watch_notify": True,
+    "pr_watch_notify": False,
     "pr_watch_sound": True,
     "pr_watch_include_drafts": False,
 }

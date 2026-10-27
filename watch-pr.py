@@ -513,7 +513,7 @@ def main():
     run_monitor(
         interval=max(5, args.interval),
         once=args.once,
-        notify=not args.no_notify,
+        notify=False,
         sound=not args.no_sound,
         include_drafts=args.include_drafts
     )

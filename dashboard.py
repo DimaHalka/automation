@@ -167,7 +167,7 @@ def load_sprint_tasks() -> List[Dict[str, Any]]:
 
 
 def scan_workspaces_sync() -> List[Dict[str, Any]]:
-    """Сканує всі робочі папки у git_roots та рахує їхній розмір (для Keep Space)."""
+    """Миттєво сканує список робочих папок у git_roots та їхні статуси задач."""
     folders = []
     for root in get_git_roots():
         if not root.exists():
@@ -182,22 +182,20 @@ def scan_workspaces_sync() -> List[Dict[str, Any]]:
     results = []
     for f in folders:
         info = keep_space_mod.get_task_info_from_folder(f)
-        size_gb = keep_space_mod.get_dir_size_gb(f)
-        state = info.get("state", "Unknown")
-        is_closed = state.lower() in keep_space_mod.CLOSED_STATES
+        state_val = info.get("state", "Unknown")
+        is_closed = state_val.lower() in keep_space_mod.CLOSED_STATES
         results.append({
             "name": f.name,
             "path": str(f),
             "drive": f.anchor or str(f)[:3],
-            "size_gb": round(size_gb, 2),
             "task_id": info.get("id") or "",
             "task_type": info.get("type", "Task"),
             "task_title": info.get("title", f.name),
-            "state": state,
+            "state": state_val,
             "is_closed": is_closed,
         })
 
-    results.sort(key=lambda x: (not x["is_closed"], -x["size_gb"]))
+    results.sort(key=lambda x: (not x["is_closed"], x["name"].lower()))
     return results
 
 
@@ -263,7 +261,7 @@ class DashboardState:
         # PR Monitor стан
         self.pr_monitoring_active: bool = True
         self.pr_interval: int = int(cfg.get("pr_watch_interval", 60))
-        self.pr_notify: bool = bool(cfg.get("pr_watch_notify", True))
+        self.pr_notify: bool = False
         self.pr_sound: bool = bool(cfg.get("pr_watch_sound", True))
         self.pr_include_drafts: bool = bool(cfg.get("pr_watch_include_drafts", False))
         self.pr_snapshots: Dict[int, Dict[str, Any]] = {}
@@ -469,10 +467,6 @@ def index_page():
         with ui.row().classes("items-center gap-3"):
             ui.icon("bolt", color="blue-400", size="26px")
             ui.label("Automation Hub").classes("text-lg font-bold tracking-tight text-white")
-            cfg = load_settings()
-            ui.badge(f"{cfg['organization']} / {cfg['project']}", color="blue-9").classes(
-                "agy-mono text-xs px-2 py-0.5"
-            )
 
         with ui.row().classes("items-center gap-4"):
             # Індикатор ADO_PAT
@@ -504,8 +498,8 @@ def index_page():
                 nav_items = [
                     ("sprint", "view_kanban", "Таски спринту"),
                     ("setup", "terminal", "Робоче оточення"),
-                    ("space", "cleaning_services", "Keep Space (Диск)"),
-                    ("pr", "merge", "Моніторинг PR"),
+                    ("pr", "merge", "Pull Requests"),
+                    ("space", "cleaning_services", "Disk Usage"),
                     ("links", "bookmarks", "Лінки та Налаштування"),
                 ]
                 for key, icon_name, label_text in nav_items:
@@ -568,7 +562,7 @@ def index_page():
                 raw_events = watch_pr_mod.compare_snapshots(
                     state.pr_snapshots,
                     new_snaps,
-                    notify_enabled=state.pr_notify,
+                    notify_enabled=False,
                     sound_enabled=state.pr_sound,
                 )
                 for ev in raw_events:
@@ -601,7 +595,6 @@ def index_page():
 
 def render_sprint_page(jump_to_setup_cb):
     tasks = load_sprint_tasks()
-    selected_task: Dict[str, Any] = tasks[0] if tasks else {}
     filter_state = {"search": "", "status": "Всі"}
 
     with ui.row().classes("w-full justify-between items-center mb-4"):
@@ -666,7 +659,6 @@ def render_sprint_page(jump_to_setup_cb):
 
         @ui.refreshable
         def list_and_preview():
-            nonlocal selected_task
             q = (filter_state["search"] or "").strip().lower()
             st_filter = filter_state["status"]
 
@@ -685,93 +677,54 @@ def render_sprint_page(jump_to_setup_cb):
                     )
                 return
 
-            if not selected_task or selected_task["id"] not in {t["id"] for t in filtered}:
-                selected_task = filtered[0]
-
-            with ui.row().classes("w-full gap-4 items-start no-wrap"):
-                # Ліва колонка: список карток задач
-                with ui.column().classes("w-7/12 gap-2.5"):
-                    for t in filtered:
-                        is_current = selected_task and selected_task["id"] == t["id"]
-                        border_cls = "border-blue-500 bg-[#161c2b]" if is_current else ""
-                        with ui.card().classes(
-                            f"w-full agy-card agy-card-hover p-3.5 cursor-pointer {border_cls}"
-                        ).on("click", lambda _, item=t: select_task(item)):
-                            with ui.row().classes("w-full justify-between items-start no-wrap gap-3"):
-                                with ui.column().classes("gap-1 flex-1"):
-                                    with ui.row().classes("items-center gap-2"):
-                                        ui.badge(t["state"], color=state_badge_color(t["state"])).classes("text-xs")
-                                        ui.label(f"#{t['id']} • {t['type']}").classes(
-                                            "text-xs agy-mono text-slate-400 font-semibold"
+            with ui.column().classes("w-full gap-2.5"):
+                for t in filtered:
+                    with ui.card().classes("w-full agy-card agy-card-hover p-3.5"):
+                        with ui.row().classes("w-full justify-between items-start no-wrap gap-3"):
+                            with ui.column().classes("gap-1 flex-1"):
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.badge(t["state"], color=state_badge_color(t["state"])).classes("text-xs")
+                                    ui.label(f"#{t['id']} • {t['type']}").classes(
+                                        "text-xs agy-mono text-slate-400 font-semibold"
+                                    )
+                                    if t["priority"] != "N/A":
+                                        ui.label(f"P{t['priority']}").classes(
+                                            "text-xs agy-mono text-amber-400 bg-amber-950/50 px-1.5 rounded"
                                         )
-                                        if t["priority"] != "N/A":
-                                            ui.label(f"P{t['priority']}").classes(
-                                                "text-xs agy-mono text-amber-400 bg-amber-950/50 px-1.5 rounded"
-                                            )
-                                    ui.label(t["title"]).classes("text-sm font-medium text-slate-100 leading-snug")
+                                ui.label(t["title"]).classes("text-sm font-medium text-slate-100 leading-snug")
 
-                                    if t["folder"]:
-                                        with ui.row().classes("items-center gap-1 mt-1"):
-                                            ui.icon("folder_special", size="15px", color="emerald-400")
-                                            ui.label(t["folder"]).classes("text-xs agy-mono text-emerald-400")
+                                if t["folder"]:
+                                    with ui.row().classes("items-center gap-1 mt-1"):
+                                        ui.icon("folder_special", size="15px", color="emerald-400")
+                                        ui.label(t["folder"]).classes("text-xs agy-mono text-emerald-400")
 
-                                # Кнопки швидких дій на картці
-                                with ui.row().classes("items-center gap-1 shrink-0"):
-                                    if t["folder"]:
-                                        ui.button(
-                                            icon="folder_open",
-                                            on_click=lambda _, p=t["folder"]: open_in_explorer(p),
-                                        ).props("flat round dense size=sm color=emerald-4").tooltip(
-                                            "Відкрити робочу папку в Explorer"
-                                        )
-                                        ui.button(
-                                            icon="code",
-                                            on_click=lambda _, p=t["folder"]: open_in_vscode(p),
-                                        ).props("flat round dense size=sm color=blue-4").tooltip(
-                                            "Відкрити у VS Code / Antigravity"
-                                        )
-                                    else:
-                                        ui.button(
-                                            "Setup Env",
-                                            icon="rocket_launch",
-                                            on_click=lambda _, item=t: jump_to_setup_cb(item),
-                                        ).props("outline dense size=sm color=blue-4 no-caps").classes("px-2")
-
-                                    if t["url"]:
-                                        ui.button(
-                                            icon="open_in_new",
-                                            on_click=lambda _, u=t["url"]: open_external_url(u),
-                                        ).props("flat round dense size=sm color=grey-5").tooltip("Відкрити в ADO")
-
-                # Права колонка: прев'ю Markdown-файлу обраної таски
-                with ui.card().classes("w-5/12 agy-card p-5 sticky top-4"):
-                    if selected_task:
-                        with ui.row().classes("w-full justify-between items-center pb-3 mb-3 border-b border-[#1e2536]"):
-                            with ui.row().classes("items-center gap-2"):
-                                ui.icon("description", color="blue-400", size="20px")
-                                ui.label(selected_task["md_path"]).classes("text-xs agy-mono text-slate-400")
-                            with ui.row().classes("gap-2"):
-                                if not selected_task["folder"]:
+                            # Кнопки швидких дій на картці
+                            with ui.row().classes("items-center gap-1 shrink-0"):
+                                if t["folder"]:
                                     ui.button(
-                                        "Створити оточення",
+                                        icon="folder_open",
+                                        on_click=lambda _, p=t["folder"]: open_in_explorer(p),
+                                    ).props("flat round dense size=sm color=emerald-4").tooltip(
+                                        "Відкрити робочу папку в Explorer"
+                                    )
+                                    ui.button(
+                                        icon="code",
+                                        on_click=lambda _, p=t["folder"]: open_in_vscode(p),
+                                    ).props("flat round dense size=sm color=blue-4").tooltip(
+                                        "Відкрити у VS Code / Antigravity"
+                                    )
+                                else:
+                                    ui.button(
+                                        "Setup Env",
                                         icon="rocket_launch",
-                                        on_click=lambda: jump_to_setup_cb(selected_task),
-                                    ).props("unelevated dense color=blue-6 no-caps size=sm").classes("px-2.5")
-                                if selected_task["url"]:
+                                        on_click=lambda _, item=t: jump_to_setup_cb(item),
+                                    ).props("outline dense size=sm color=blue-4 no-caps").classes("px-2")
+
+                                if t["url"]:
                                     ui.button(
-                                        "ADO",
                                         icon="open_in_new",
-                                        on_click=lambda: open_external_url(selected_task["url"]),
-                                    ).props("outline dense color=grey-5 no-caps size=sm")
-
-                        ui.markdown(selected_task["content"]).classes(
-                            "text-sm text-slate-200 max-h-[65vh] overflow-y-auto pr-2"
-                        )
-
-        def select_task(item: Dict[str, Any]):
-            nonlocal selected_task
-            selected_task = item
-            list_and_preview.refresh()
+                                        on_click=lambda _, u=t["url"]: open_external_url(u),
+                                    ).props("flat round dense size=sm color=grey-5").tooltip("Відкрити в ADO")
 
         list_and_preview()
 
@@ -891,22 +844,22 @@ def render_setup_page():
     run_btn.on_click(start_task_setup)
 
 
-# ================= 3. СТОРІНКА: KEEP SPACE =================
+# ================= 3. СТОРІНКА: DISK USAGE (KEEP SPACE) =================
 
 def render_keep_space_page():
-    selected_paths: set[str] = set()
-    workspaces_data: List[Dict[str, Any]] = []
-    is_scanning = {"val": False}
+    workspaces_data: List[Dict[str, Any]] = scan_workspaces_sync()
+    selected_paths: set[str] = {w["path"] for w in workspaces_data if w["is_closed"]}
+    is_deleting = {"val": False}
 
     with ui.row().classes("w-full justify-between items-center mb-4"):
         with ui.column().classes("gap-0.5"):
-            ui.label("Keep Space — Очищення робочих папок").classes("text-2xl font-bold text-white")
+            ui.label("Disk Usage — Очищення робочих папок").classes("text-2xl font-bold text-white")
             ui.label(
-                "Сканує всі робочі директорії в git_roots, звіряє статуси задач зі спринтом і дозволяє видалити закриті таски"
+                "Список робочих директорій у git_roots зі статусами задач зі спринту для швидкого видалення закритих тасок"
             ).classes("text-sm text-slate-400")
 
         with ui.row().classes("gap-2"):
-            scan_btn = ui.button("Сканувати диски", icon="radar").props("outline color=blue-4 no-caps")
+            scan_btn = ui.button("Оновити список", icon="refresh").props("outline color=blue-4 no-caps")
             select_closed_btn = ui.button("Вибрати всі закриті", icon="check_box").props(
                 "outline color=emerald-4 no-caps"
             )
@@ -914,35 +867,33 @@ def render_keep_space_page():
 
     @ui.refreshable
     def space_table_view():
-        if is_scanning["val"]:
+        if is_deleting["val"]:
             with ui.card().classes("w-full agy-card p-10 items-center justify-center gap-3"):
-                ui.spinner("dots", size="40px", color="blue-4")
-                ui.label("Підрахунок розміру робочих папок у git_roots...").classes("text-slate-300")
+                ui.spinner("dots", size="40px", color="red-4")
+                ui.label("Видалення вибраних папок...").classes("text-slate-300")
             return
 
         if not workspaces_data:
             with ui.card().classes("w-full agy-card p-8 items-center justify-center"):
                 ui.icon("folder_off", size="40px", color="slate-600")
-                ui.label("Натисніть 'Сканувати диски', щоб проаналізувати зайняте місце.").classes("text-slate-400 mt-2")
+                ui.label("Робочих папок у git_roots не знайдено.").classes("text-slate-400 mt-2")
             return
 
-        total_gb = sum(w["size_gb"] for w in workspaces_data)
-        selected_gb = sum(w["size_gb"] for w in workspaces_data if w["path"] in selected_paths)
-        closed_gb = sum(w["size_gb"] for w in workspaces_data if w["is_closed"])
+        closed_count = sum(1 for w in workspaces_data if w["is_closed"])
 
         # Картки статистики
         with ui.row().classes("w-full gap-4 mb-4"):
             with ui.card().classes("flex-1 agy-card p-4"):
                 ui.label("Усього робочих папок").classes("text-xs text-slate-400")
-                ui.label(f"{len(workspaces_data)} папок ({total_gb:.1f} GB)").classes(
+                ui.label(f"{len(workspaces_data)} папок").classes(
                     "text-xl font-bold text-white agy-mono mt-1"
                 )
             with ui.card().classes("flex-1 agy-card p-4"):
-                ui.label("Закриті таски (можна звільнити)").classes("text-xs text-slate-400")
-                ui.label(f"{closed_gb:.1f} GB").classes("text-xl font-bold text-emerald-400 agy-mono mt-1")
+                ui.label("Закриті таски (Resolved / Closed)").classes("text-xs text-slate-400")
+                ui.label(f"{closed_count} папок").classes("text-xl font-bold text-emerald-400 agy-mono mt-1")
             with ui.card().classes("flex-1 agy-card p-4"):
                 ui.label("Вибрано до видалення").classes("text-xs text-slate-400")
-                ui.label(f"{len(selected_paths)} папок ({selected_gb:.1f} GB)").classes(
+                ui.label(f"{len(selected_paths)} папок").classes(
                     "text-xl font-bold text-red-400 agy-mono mt-1"
                 )
 
@@ -955,7 +906,7 @@ def render_keep_space_page():
                 with ui.card().classes(f"w-full agy-card p-3.5 {row_border}"):
                     with ui.row().classes("w-full items-center justify-between no-wrap gap-4"):
                         with ui.row().classes("items-center gap-3 flex-1"):
-                            cb = ui.checkbox(
+                            ui.checkbox(
                                 value=is_checked,
                                 on_change=lambda e, path=p: toggle_path(path, e.value),
                             ).props("dark color=red-5")
@@ -970,11 +921,8 @@ def render_keep_space_page():
                                     f"#{w['task_id']} {w['task_title']}" if w["task_id"] else w["path"]
                                 ).classes("text-xs text-slate-400")
 
-                        with ui.row().classes("items-center gap-3 shrink-0"):
-                            ui.label(f"{w['size_gb']:.2f} GB").classes(
-                                "text-sm font-bold agy-mono "
-                                + ("text-amber-400" if w["size_gb"] > 10 else "text-slate-200")
-                            )
+                        with ui.row().classes("items-center gap-2 shrink-0"):
+                            ui.label(w["path"]).classes("text-xs agy-mono text-slate-500 mr-2")
                             ui.button(
                                 icon="folder_open",
                                 on_click=lambda _, path=p: open_in_explorer(path),
@@ -991,18 +939,14 @@ def render_keep_space_page():
             selected_paths.discard(path_str)
         space_table_view.refresh()
 
-    async def do_scan():
-        is_scanning["val"] = True
-        space_table_view.refresh()
-        res = await run.io_bound(scan_workspaces_sync)
+    def do_scan():
+        res = scan_workspaces_sync()
         workspaces_data.clear()
         workspaces_data.extend(res)
         selected_paths.clear()
-        # Автоматично відмічаємо закриті задачі
         for w in workspaces_data:
             if w["is_closed"]:
                 selected_paths.add(w["path"])
-        is_scanning["val"] = False
         space_table_view.refresh()
 
     def select_all_closed():
@@ -1017,23 +961,22 @@ def render_keep_space_page():
             return
 
         to_del = [w for w in workspaces_data if w["path"] in selected_paths]
-        freed_gb = sum(w["size_gb"] for w in to_del)
 
         with ui.dialog() as dialog, ui.card().classes("agy-card p-6 w-[480px]"):
             ui.label("Підтвердження видалення").classes("text-lg font-bold text-white")
             ui.label(
-                f"Ви дійсно хочете назавжди видалити {len(to_del)} папок (звільниться ~{freed_gb:.2f} GB)?"
+                f"Ви дійсно хочете назавжди видалити вибрані папки ({len(to_del)} шт.)?"
             ).classes("text-sm text-slate-300 mt-1")
             with ui.column().classes("w-full bg-[#0b0d12] p-3 rounded border border-[#1e2433] my-3 max-h-40 overflow-y-auto"):
                 for item in to_del:
-                    ui.label(f"• {item['path']} ({item['size_gb']:.2f} GB)").classes("text-xs agy-mono text-red-300")
+                    ui.label(f"• {item['path']}").classes("text-xs agy-mono text-red-300")
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("Скасувати", on_click=dialog.close).props("flat color=grey-5 no-caps")
 
                 async def execute_delete():
                     dialog.close()
-                    is_scanning["val"] = True
+                    is_deleting["val"] = True
                     space_table_view.refresh()
                     for item in to_del:
                         target = Path(item["path"])
@@ -1041,8 +984,9 @@ def render_keep_space_page():
                             await run.io_bound(
                                 lambda t=target: shutil.rmtree(t, onerror=keep_space_mod.remove_readonly)
                             )
-                    ui.notify(f"Видалено {len(to_del)} папок (~{freed_gb:.1f} GB звільнено)!", type="positive")
-                    await do_scan()
+                    is_deleting["val"] = False
+                    ui.notify(f"Видалено {len(to_del)} папок!", type="positive")
+                    do_scan()
 
                 ui.button("Видалити назавжди", icon="delete_forever", on_click=execute_delete).props(
                     "unelevated color=red-6 no-caps"
@@ -1055,8 +999,6 @@ def render_keep_space_page():
     delete_btn.on_click(confirm_and_delete)
 
     space_table_view()
-    # Автоматично запускаємо сканування при першому відкритті вкладки
-    ui.timer(0.1, do_scan, once=True)
 
 
 # ================= 4. СТОРІНКА: PR MONITOR =================
@@ -1075,11 +1017,6 @@ def render_pr_monitor_page():
                 value=state.pr_monitoring_active,
                 on_change=lambda e: setattr(state, "pr_monitoring_active", e.value),
             ).props("color=blue-5 dark")
-            ui.switch(
-                "Toast-сповіщення",
-                value=state.pr_notify,
-                on_change=lambda e: setattr(state, "pr_notify", e.value),
-            ).props("color=emerald-5 dark")
             ui.switch(
                 "Звук",
                 value=state.pr_sound,
