@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-BASE_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+BASE_DIR = SCRIPT_DIR.parent if (SCRIPT_DIR.parent / "data").exists() or (SCRIPT_DIR.parent / "settings.example.json").exists() else SCRIPT_DIR
 DATA_DIR = BASE_DIR / "data"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 LINKS_FILE = DATA_DIR / "links.json"
